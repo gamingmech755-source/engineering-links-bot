@@ -9,9 +9,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+BOT_TOKEN = os.getenv('8620308349:AAFy0A6YxgVwwBZX6e45o0q8ipVq0aVJkR0')
 ADMIN_ID = int(os.getenv('ADMIN_ID', '5170411055'))
-ADSTERRA_LINK = os.getenv('ADSTERRA_LINK')
+ADSTERRA_LINK = os.getenv('https://www.profitablecpmratenetwork.com/xanjh12pq?key=67f5b6c8ee27418ab6becf24f7022909')
 
 DISCLAIMER = """
 ⚠️ **DISCLAIMER** ⚠️
