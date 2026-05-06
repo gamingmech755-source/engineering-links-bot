@@ -101,6 +101,8 @@ BRANCHES = {
 }
 
 user_stats = {}
+# Tracks which (user_id, branch_key) pairs have clicked the ad this session
+ad_clicked = set()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
@@ -141,47 +143,98 @@ async def branch_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if branch_key not in user_stats[user_id]['branches_accessed']:
             user_stats[user_id]['branches_accessed'].append(branch_key)
     
-    ad_message = f"""
-📢 **ADVERTISEMENT**
+    # Clear any previous ad-click approval for this user+branch so they must
+    # click the ad again each time they select a branch.
+    ad_clicked.discard((user_id, branch_key))
 
-Check out amazing resources and earn rewards!
+    ad_message = (
+        "📢 **ADVERTISEMENT**\n\n"
+        "To access the study materials you **must** click the ad link below.\n\n"
+        f"🔗 [**Click Here to Continue**]({ADSTERRA_LINK})\n\n"
+        "After clicking the link, press **✅ I clicked the ad – Show Links**."
+    )
 
-🔗 [Click Here for Exclusive Offers]({ADSTERRA_LINK})
-
-After viewing the ad, click below to access your study materials.
-"""
-    
     keyboard = [
-        [InlineKeyboardButton("📖 View Study Links", callback_data=f'links_{branch_key}')],
-        [InlineKeyboardButton("🔙 Back to Branches", callback_data='agree')]
+        [InlineKeyboardButton("🔗 Click Ad to Unlock Links", url=ADSTERRA_LINK)],
+        [InlineKeyboardButton("✅ I clicked the ad – Show Links", callback_data=f'ad_click_{branch_key}')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+
     await query.edit_message_text(
         text=ad_message,
         reply_markup=reply_markup,
         parse_mode='Markdown'
     )
 
+async def ad_click_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """User pressed the confirmation button after (supposedly) clicking the ad."""
+    query = update.callback_query
+    await query.answer()
+
+    branch_key = query.data.split('_')[2]
+    user_id = query.from_user.id
+
+    # Record that this user has clicked the ad for this branch session
+    ad_clicked.add((user_id, branch_key))
+
+    branch_name = BRANCHES[branch_key]['name']
+    unlocked_message = (
+        f"✅ **Ad confirmed!** Thank you for supporting us.\n\n"
+        f"You can now access the **{branch_name}** study materials below."
+    )
+
+    keyboard = [
+        [InlineKeyboardButton("📖 View Study Links", callback_data=f'links_{branch_key}')],
+        [InlineKeyboardButton("🔙 Back to Branches", callback_data='agree')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(
+        text=unlocked_message,
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+
+
 async def links_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
-    
+
     branch_key = query.data.split('_')[1]
+    user_id = query.from_user.id
+
+    # Gate: user must have clicked the ad for this branch in this session
+    if (user_id, branch_key) not in ad_clicked:
+        gate_message = (
+            "🚫 **Access Denied**\n\n"
+            "Please click the ad link above to unlock the study materials.\n\n"
+            "👉 Press **Back** and click **🔗 Click Ad to Unlock Links** first."
+        )
+        keyboard = [
+            [InlineKeyboardButton("🔙 Back", callback_data=f'branch_{branch_key}')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            text=gate_message,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+        return
+
     branch = BRANCHES[branch_key]
-    
+
     links_text = f"🎓 **{branch['name']} Resources:**\n\n"
     for name, url in branch['links']:
         links_text += f"📌 [{name}]({url})\n"
-    
+
     links_text += "\n\n💡 *All links are to publicly available resources on Telegram and other platforms.*"
-    
+
     keyboard = [
         [InlineKeyboardButton("🔙 Back to Branches", callback_data='agree')],
         [InlineKeyboardButton("📞 Contact Admin", callback_data='contact')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+
     await query.edit_message_text(
         text=links_text,
         reply_markup=reply_markup,
@@ -274,15 +327,16 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 def main() -> None:
     application = Application.builder().token(BOT_TOKEN).build()
-    
+
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("stats", stats_command))
     application.add_handler(CallbackQueryHandler(agree_callback, pattern='^agree$'))
     application.add_handler(CallbackQueryHandler(branch_callback, pattern='^branch_'))
+    application.add_handler(CallbackQueryHandler(ad_click_callback, pattern='^ad_click_'))
     application.add_handler(CallbackQueryHandler(links_callback, pattern='^links_'))
     application.add_handler(CallbackQueryHandler(contact_callback, pattern='^contact$'))
-    
+
     application.run_polling()
 
 if __name__ == '__main__':
